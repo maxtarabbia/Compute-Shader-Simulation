@@ -1,0 +1,91 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+#include "noise.inc"
+
+
+
+struct Cell
+{
+    float2 position;
+    float4 color;
+};
+
+bool debugMode;
+float2 noiseOffset;
+float z;
+float scale;
+int size;
+RWStructuredBuffer<Cell> cells; 
+
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+
+    float4 o = float4(0,0,0,0);
+    
+    Cell cell = cells[id.x];
+    
+    //cell.color = cell.color / 255;
+    
+    // COLORED NOISE //
+    
+    float4 ColNoise;
+    
+    ColNoise.r = snoisefracal2(float3((noiseOffset + cell.position) * scale, z + 35.1));
+    ColNoise.g = snoisefracal2(float3((noiseOffset + cell.position) * scale, z + 11.234));
+    ColNoise.b = snoisefracal2(float3((noiseOffset + cell.position) * scale, z - 8541.123));
+    ColNoise.a = 1;
+    //o = float4(ColNoise, 1);
+    
+    // DISSOLVING //
+    
+    float4 ColDissolved;
+    
+    float power = 0.01;
+    
+    ColDissolved = cell.color;
+    
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x + 1].color * power;
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x - 1].color * power;
+    
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x + 1 + size].color * power;
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x - 1 + size].color * power;
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x + size].color * power;
+    
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x + 1 - size].color * power;
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x - 1 - size].color * power;
+    ColDissolved = ColDissolved * (1 - power) + cells[id.x - size].color * power;
+    
+    ColDissolved = clamp(ColDissolved, 0, 1);
+    
+    
+    //o = ColDissolved;
+    
+    // MOVEMENT //
+    
+    uint offset = 0;
+    
+    float threshhold = 0.1;
+    
+    offset += ((ColNoise.g > threshhold) * size);
+    offset += ((ColNoise.g < -threshhold) * -size);
+    
+    offset += ((ColNoise.b > threshhold) * 1);
+    offset -= ((ColNoise.b < -threshhold) * 1);
+    
+    float3 OffsetCol = cells[id.x - offset].color.rgb;
+    
+    float4 MovedCol = (float4(max(OffsetCol, cell.color.rgb), 1) - 0.001f) * 0.995f;
+
+    MovedCol = clamp(MovedCol, 0, 1);
+    
+    o = ColNoise * debugMode + MovedCol * (1-debugMode);
+    
+    
+    cell.color = o;
+    
+    cells[id.x] = cell;
+}
+
+
+
